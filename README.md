@@ -71,19 +71,18 @@ We dcieded in this project simulates the vegetative growth phase of tomato plant
    - Simulates a tomato leaf to measure surface moisture  
 <img src="https://github.com/user-attachments/assets/8ebb374a-412e-4a11-8bb6-9abcf2a380d0" width="150" />
 
-4. **Fan**  
+4. [**Fan**](https://electronicworld.co.in/product/arx-fd1290-s3033e-12v-dc-0-18a-bldc-cooling-fan/)  
    - DC fan (5–12V depending on model) for ventilation and VPD control  
    - Controlled via **relay**  
 
-5. **Mist Sprayer**  
-   - Activates only if **VPD is high** and leaf is dry  
-
-6. **Buck Converter**  
+5. **Buck Converter**  
    - Converts 12V supply to 5V for ESP32 and sensors  
 <img src="https://github.com/user-attachments/assets/6b067c58-f87a-41ff-b429-d868455b7664" width="150" />
 
-7. **Relay Module**  
+6. **Relay**  
    - Controls Fan and Mist power circuits
+<img width="150" height="720" alt="image" src="https://github.com/user-attachments/assets/e4772b01-e083-4227-a8a8-5f0f9f07df43" />
+
 
 ### General Structure
 
