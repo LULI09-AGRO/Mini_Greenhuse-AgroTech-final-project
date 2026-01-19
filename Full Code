@@ -1,0 +1,697 @@
+/*************************************************************
+ * PROJECT: Mini-Greenhouse VPD Control System
+ * BOARD: ESP32 Firebeetle WROOM 32E
+ * 
+ * FEATURES:
+ * - Dual SHT31 sensors (Indoor + Outdoor VPD)
+ * - Leaf wetness sensor (analog)
+ * - Fan control via relay (when VPD too LOW)
+ * - Mist sprayer control via MQTT (when VPD too HIGH + leaf is dry)
+ * - ThingSpeak data logging
+ * - Local web server for status display
+ * 
+ * CONTROL LOGIC:
+ * - When VPD is too high and leaf is dry → Activate mist sprayer (MQTT)
+ * - When VPD is too high but leaf is wet → Do nothing (leaf already moist - risking leaf rot)
+ * - when VPD is too LOW → Activate fan
+ * - VPD optimal → All off
+ ************************************************************/
+
+// ==================== Libraries Needed ====================
+#include <Arduino.h>
+#include <WiFi.h>
+#include <Wire.h>
+#include "Adafruit_SHT31.h"
+#include <PubSubClient.h>
+#include "ThingSpeak.h"
+#include <WiFiUdp.h>
+#include <WebServer.h>
+
+// NOTE: All credentials are placeholders and must be replaced with real values before deployment
+
+// ==================== WIFI Configuration====================
+const char* WIFI_SSID     = "123"; // Enter WIFI SSID
+const char* WIFI_PASSWORD = "123"; // Enter WIFI password
+
+// ==================== MQTT Configuration ====================
+const char* MQTT_SERVER   = "123"; // Enter your MQTT server
+const int   MQTT_PORT     = 123; // Enter your MQTT port
+const char* MQTT_USER     = "123"; // Enter MQTT username
+const char* MQTT_PASSWORD = "123"; // Enter MQTT password
+const char* MQTT_TOPIC    = "123";// Enter topic - The solenoid controller MUST!! be subscribed to the exact same topic
+
+// ==================== THINGSPEAK Configuration ====================
+unsigned long THINGSPEAK_CHANNEL = 123;       // Replace with your channel number
+const char*   THINGSPEAK_API_KEY = "123";     // Replace with your Write API Key
+
+// ==================== Harware Pin Maping ====================
+// Fan relay control
+#define PIN_FAN_RELAY    D2      // Mapped to GPIO25
+
+// Leaf wetness sensor 
+#define PIN_LEAF_SENSOR  36  // Analog input 
+
+// I2C Bus 1 - Indoor SHT31 
+#define SDA1_PIN         21      
+#define SCL1_PIN         22      
+
+// I2C Bus 2 - Outdoor SHT31 (custom I2C pins)
+#define SDA2_PIN         17      // D10 on Firebeetle
+#define SCL2_PIN         16      // D11 on Firebeetle
+
+// ==================== VPD Control Variables ====================
+// VPD measured in kPa - optimal range is set to: 0.8 - 1.2 kPa
+const float VPD_LOW_THRESHOLD  = 0.8; // Below this → Fan ON (increase VPD)
+const float VPD_HIGH_THRESHOLD = 1.2;   // Above this → Mist ON (decrease VPD)
+
+// Leaf wetness thresholds (0-4095 analog range)
+// Lower value = Drier leaf, Higher value = Wetter leaf
+
+const int LEAF_DRY_THRESHOLD   = 500;   // Below this = DRY
+const int LEAF_WET_THRESHOLD   = 1200;  // Above this = TOO WET
+const int HYSTERESIS_BUFFER    = 200;   // Prevents the system from glitching due to noise and minor measurement differences
+
+// ==================== Timing Configuration ====================
+const unsigned long SENSOR_READ_INTERVAL = 5000;    // Read sensors every 5 seconds
+const unsigned long THINGSPEAK_INTERVAL  = 20000;   // Upload every 20 seconds (ThingSpeak limit: 15s)
+
+// ==================== Global Configuration ====================
+// I2C buses for dual sensors
+TwoWire I2C_Indoor  = TwoWire(0);  // First I2C bus (indoor sensor)
+TwoWire I2C_Outdoor = TwoWire(1);  // Second I2C bus (outdoor sensor)
+
+// SHT31 sensor 
+Adafruit_SHT31 sht31_indoor  = Adafruit_SHT31(&I2C_Indoor);
+Adafruit_SHT31 sht31_outdoor = Adafruit_SHT31(&I2C_Outdoor);
+
+// Network clients
+WiFiClient wifiClient;
+PubSubClient mqttClient(wifiClient);
+WebServer webServer(80);
+
+// ==================== State And Measurement Variables ====================
+// SHT31 Indoor Sensor
+float tempIndoor  = 0.0;
+float humIndoor   = 0.0;
+float vpdIndoor   = 0.0;
+
+// SHT31 Outdoor Sensor
+float tempOutdoor = 0.0;
+float humOutdoor  = 0.0;
+float vpdOutdoor  = 0.0;
+
+// Leaf Sensoor
+int leafSensorRaw = 0;
+bool leafIsDry    = false;
+
+// Actuator states (Boolean Value)
+bool fanState     = false;   // false = OFF, true = ON
+bool mistState    = false;   // false = OFF, true = ON
+
+// Timing trackers
+unsigned long lastSensorRead    = 0;
+unsigned long lastThingSpeakUpload = 0;
+
+// HTML display strings
+String TEMP_IN_str   = "--";
+String RH_IN_str     = "--";
+String VPD_IN_str    = "--";
+String TEMP_OUT_str  = "--";
+String RH_OUT_str    = "--";
+String VPD_OUT_str   = "--";
+String LEAF_str      = "--";
+String FAN_str       = "OFF";
+String MIST_str      = "OFF";
+
+// ==================== Leaf Sensor Reading Function Variables ====================
+// Moving average 
+const int LEAF_FILTER_SIZE = 5;        // Number of readings for an average
+int leafReadings[LEAF_FILTER_SIZE];    // Circular buffer
+int leafIndex = 0;                     // Current index in buffer
+long leafSum = 0;                      // Sum for fast averaging
+bool leafBufferFilled = false;         // Has the buffer wrapped around
+
+
+// ==================== VPD Calculation Function ====================
+/*
+ * VPD Formula:
+ * VPD = SVP × (1 - RH/100)
+ * 
+ * Where SVP (Saturation Vapor Pressure) = 0.6108 × exp(17.27 × T / (T + 237.3))
+ * T = Temperature in Celsius
+ * RH = Relative Humidity in %
+ * Result in kPa
+ */
+float calculateVPD(float temp, float humidity) {
+  if (isnan(temp) || isnan(humidity)) {
+    return -1.0;  // Error indicator
+  }
+  
+  // Calculate Saturation Vapor Pressure (SVP) in kPa
+  float svp = 0.6108 * exp((17.27 * temp) / (temp + 237.3));
+  
+  // Calculate VPD
+  float vpd = svp * (1.0 - (humidity / 100.0));
+  
+  return vpd;
+}
+
+// ==================== Leaf Sensor Functions ====================
+
+// Creating String for HTML web page
+String getLeafStatusText(int reading) {
+  if (reading < LEAF_DRY_THRESHOLD) {
+    return "DRY - Needs moisture";
+  }
+  if (reading >= LEAF_DRY_THRESHOLD && reading < LEAF_WET_THRESHOLD) {
+    return "OPTIMAL";
+  }
+  return "WET - Too much moisture";
+}
+
+// Is the leaf is dry function
+bool isLeafDry(int reading) {
+  return (reading < LEAF_DRY_THRESHOLD);
+}
+
+// Raw analog reading to moving avrage measurement - lowers the effect of noise around the analog sensor
+int readLeafSensorFiltered() {
+  // Read raw analog value
+  int raw = analogRead(PIN_LEAF_SENSOR);
+
+  // Remove oldest value from sum
+  leafSum -= leafReadings[leafIndex];
+
+  // Store new value
+  leafReadings[leafIndex] = raw;
+
+  // Add new value to sum
+  leafSum += raw;
+
+  // Move index
+  leafIndex++;
+  if (leafIndex >= LEAF_FILTER_SIZE) {
+    leafIndex = 0;
+    leafBufferFilled = true;
+  }
+
+  // Compute average
+  int count = leafBufferFilled ? LEAF_FILTER_SIZE : leafIndex;
+  int average = leafSum / count;
+
+  return average;
+}
+
+// ==================== Actuator Control ====================
+
+// Checing fan state function
+void setFanState(bool on) {
+  fanState = on;
+  digitalWrite(PIN_FAN_RELAY, on ? LOW : HIGH);
+  FAN_str = on ? "ON" : "OFF";
+  
+  Serial.print("[FAN] State changed to: ");
+  Serial.println(on ? "ON" : "OFF");
+}
+
+// Checking mist state function
+void setMistState(bool on) {
+  // Only send MQTT if state actually changes
+  if (on != mistState) {
+    mistState = on;
+    MIST_str = on ? "ON" : "OFF";
+    
+    // Publish to MQTT
+    if (mqttClient.connected()) {
+      mqttClient.publish(MQTT_TOPIC, on ? "1" : "0");
+      Serial.print("[MQTT] Published mist command: ");
+      Serial.println(on ? "OPEN (1)" : "CLOSE (0)");
+    } else {
+      Serial.println("[MQTT] Warning: Not connected, command not sent");
+    }
+  }
+}
+
+// ==================== Control Logic ====================
+void runControlLogic() {
+  Serial.println("\n--- CONTROL LOGIC ---");
+  Serial.printf("Indoor VPD: %.2f kPa | Leaf Raw: %d (%s)\n", 
+                vpdIndoor, leafSensorRaw, leafIsDry ? "DRY" : "NOT DRY");
+  
+  // Skip if sensor error
+  if (vpdIndoor < 0) {
+    Serial.println("[CONTROL] Sensor error - skipping control logic");
+    return;
+  }
+  
+  bool shouldFanBeOn  = false;
+  bool shouldMistBeOn = false;
+  
+  // CASE 1: VPD too LOW → Turn fan ON to increase air circulation, if temprature IN too low and RH OUT too high → fan will not turn ON
+  if (vpdIndoor < VPD_LOW_THRESHOLD) {
+    if (humOutdoor < 60 && tempIndoor > 18.0) {
+      shouldFanBeOn = true;
+      shouldMistBeOn = false;
+      Serial.println("   → VPD LOW: Fan ON (outdoor air dry & temp OK)");
+    } 
+    else {
+      shouldFanBeOn = false;
+      shouldMistBeOn = false;
+      Serial.println("   → VPD LOW: Fan OFF (outdoor air not dry OR temp too low)");
+    }
+  }
+  // CASE 2: VPD too HIGH → Check leaf before activating mist
+  // Leaf wetness acts as a safety condition:
+// VPD can request misting, but leaf wetness can block it
+  else if (vpdIndoor > VPD_HIGH_THRESHOLD) {
+    shouldFanBeOn = false;
+    
+    if (leafIsDry) {
+      shouldMistBeOn = true;
+      Serial.printf("   → VPD HIGH (%.2f > %.2f) + Leaf DRY: Mist ON\n", 
+                    vpdIndoor, VPD_HIGH_THRESHOLD);
+    } else {
+      shouldMistBeOn = false;
+      Serial.printf("   → VPD HIGH but Leaf WET: Mist stays OFF\n");
+    }
+  }
+  // CASE 3: VPD in optimal range → Everything OFF
+  else {
+    shouldFanBeOn = false;
+    shouldMistBeOn = false;
+    Serial.printf("   → VPD OPTIMAL (%.2f): All OFF\n", vpdIndoor);
+  }
+  
+  // HYSTERESIS (correct and robust)
+  if (mistState) {
+    if (leafSensorRaw > (LEAF_WET_THRESHOLD + HYSTERESIS_BUFFER)) {
+      shouldMistBeOn = false;
+      Serial.println("   → Hysteresis: Turning mist OFF (leaf too wet)");
+    } else if (vpdIndoor <= VPD_HIGH_THRESHOLD) {
+      shouldMistBeOn = false;
+      Serial.println("   → Hysteresis: Turning mist OFF (VPD normal)");
+    } else {
+      shouldMistBeOn = true;
+      Serial.println("   → Hysteresis: Keeping mist ON");
+    }
+  }
+  
+  // Execute state changes
+  if (shouldFanBeOn != fanState) {
+    setFanState(shouldFanBeOn);
+  }
+  
+  if (shouldMistBeOn != mistState) {
+    setMistState(shouldMistBeOn);
+  }
+}
+
+// ==================== WIFI SETUP ====================
+void setupWiFi() {
+  Serial.print("[WiFi] Connecting to: ");
+  Serial.println(WIFI_SSID);
+  
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi] Connected!");
+    Serial.print("[WiFi] IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n[WiFi] Connection failed!");
+  }
+}
+
+// ==================== MQTT Function ====================
+void reconnectMQTT() {
+  if (!mqttClient.connected()) {
+    Serial.print("[MQTT] Attempting connection...");
+    
+    if (mqttClient.connect("ESP32_Greenhouse", MQTT_USER, MQTT_PASSWORD)) {
+      Serial.println(" Connected!");
+    } else {
+      Serial.print(" Failed, rc=");
+      Serial.println(mqttClient.state());
+    }
+  }
+}
+
+// ==================== Raw Reading And State To HTML String ====================
+
+String uiTemp(float t) {
+  if (isnan(t)) return "-- °C";
+  return String(t, 1) + " °C";
+}
+
+String uiHumidity(float h) {
+  if (isnan(h)) return "-- %";
+  return String(h, 0) + " %";
+}
+
+String uiVPD(float vpd) {
+  if (vpd < 0) return "ERROR";
+  return String(vpd, 2) + " kPa";
+}
+
+String uiVPDStatus(float vpd) {
+  if (vpd < 0) return "ERROR";
+  if (vpd < VPD_LOW_THRESHOLD)  return "LOW";
+  if (vpd > VPD_HIGH_THRESHOLD) return "HIGH";
+  return "OPTIMAL";
+}
+
+String uiLeafStatus(int raw) {
+  return getLeafStatusText(raw);   // reuse existing logic
+}
+
+String uiFanStatus() {
+  return fanState ? "ON" : "OFF";
+}
+
+String uiMistStatus() {
+  return mistState ? "ON" : "OFF";
+}
+
+String uiStatusClass(bool state) {
+  return state ? "status-on" : "status-off";
+}
+
+
+
+// ==================== HTML Web Page ====================
+void handleRoot() {
+  String page;
+  page.reserve(6000);   // Prevent heap fragmentation
+
+  page += "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+  page += "<meta http-equiv='refresh' content='10'>";
+  page += "<title>Mini-Greenhouse Control</title>";
+
+  // CSS Styling
+  page += "<style>";
+  page += "body{font-family:Calibri,Arial,sans-serif; background-color:#116238; color:white; max-width:700px; margin:20px auto; padding:20px;}";
+  page += "h1{text-align:center; font-size:28px; margin-bottom:30px;}";
+  page += ".card{background:#FE6862; padding:20px; border-radius:14px; margin-bottom:20px; box-shadow:0 3px 8px rgba(0,0,0,0.3);}";
+  page += ".card-blue{background:#2196F3;}";
+  page += ".icon{font-size:36px; text-align:center; margin-bottom:10px;}";
+  page += "h3{text-align:center; margin:10px 0; font-size:18px;}";
+  page += ".value{text-align:center; font-size:14px; margin:5px 0;}";
+  page += ".status-on{color:#FFEB3B; font-weight:bold;}";
+  page += ".status-off{color:#E0E0E0;}";
+  page += "</style></head><body>";
+
+  page += "<h1>🏡🌱 Mini-Greenhouse Control 🍅🍅</h1>";
+
+  // --- Leaf Sensor Card ---
+  String leafColor = "#4CAF50";
+  String leafIcon = "🍃";
+  if (leafSensorRaw < LEAF_DRY_THRESHOLD) {
+    leafColor = "#FF9800"; leafIcon = "🌱";
+  }
+  if (leafSensorRaw > LEAF_WET_THRESHOLD) {
+    leafColor = "#2196F3"; leafIcon = "💧";
+  }
+
+  page += String("<div class='card' style='background-color:")
+        + leafColor + ";'><div class='icon'>" + leafIcon + "</div>";
+  page += "<h3>Leaf Wetness Sensor</h3>";
+  page += String("<div class='value'>Raw: ") + leafSensorRaw + "</div>";
+  page += String("<div class='value'>Status: ") + LEAF_str + "</div></div>";
+
+  // --- Indoor Environment Card ---
+  String vpdInColor = "#4CAF50";
+  if (vpdIndoor < VPD_LOW_THRESHOLD) vpdInColor = "#FF9800";
+  if (vpdIndoor > VPD_HIGH_THRESHOLD) vpdInColor = "#FFEB3B";
+
+  page += String("<div class='card' style='background-color:")
+        + vpdInColor + ";'><div class='icon'>🌡</div>";
+  page += "<h3>Indoor Environment</h3>";
+  page += String("<div class='value'>Temperature: ") + TEMP_IN_str + "</div>";
+  page += String("<div class='value'>Humidity: ") + RH_IN_str + "</div>";
+  page += String("<div class='value'><strong>VPD: ") + VPD_IN_str + "</strong></div></div>";
+
+  // --- Outdoor Environment Card ---
+  String vpdOutColor = "#4CAF50";
+  if (vpdOutdoor < VPD_LOW_THRESHOLD) vpdOutColor = "#FF9800";
+  if (vpdOutdoor > VPD_HIGH_THRESHOLD) vpdOutColor = "#FFEB3B";
+
+  page += String("<div class='card card-blue' style='background-color:")
+        + vpdOutColor + ";'><div class='icon'>🌡</div>";
+  page += "<h3>Outdoor Environment</h3>";
+  page += String("<div class='value'>Temperature: ") + TEMP_OUT_str + "</div>";
+  page += String("<div class='value'>Humidity: ") + RH_OUT_str + "</div>";
+  page += String("<div class='value'><strong>VPD: ") + VPD_OUT_str + "</strong></div></div>";
+
+  // --- Fan & Mist Card ---
+String fanIcon  = fanState  ? "🌬" : "";
+String mistIcon = mistState ? "💦" : "";
+
+// Set background colors for each state
+String fanMistColor = "#DADADA"; // default OFF
+
+if (mistState) {
+  fanMistColor = "#90D5FF";      // mist ON
+} else if (fanState) {
+  fanMistColor = "#B7C9E2";      // fan ON
+}
+
+page += String("<div class='card' style='background-color:")
+      + fanMistColor + ";'><div class='icon'>"
+      + fanIcon + mistIcon + "</div>";
+
+page += "<h3>Fan & Mist Sprayer</h3>";
+
+page += String("<div class='value'>Fan: <span class='")
+      + (fanState ? "status-on" : "status-off")
+      + "'>" + FAN_str + "</span></div>";
+
+page += String("<div class='value'>Mist: <span class='")
+      + (mistState ? "status-on" : "status-off")
+      + "'>" + MIST_str + "</span></div></div>";
+
+  // --- Plant Status Cards ---
+  String indoorPlantColor =
+      (vpdIndoor >= VPD_LOW_THRESHOLD && vpdIndoor <= VPD_HIGH_THRESHOLD)
+      ? "#4CAF50" : "#FF9800";
+
+  String outdoorPlantColor =
+      (vpdOutdoor >= VPD_LOW_THRESHOLD && vpdOutdoor <= VPD_HIGH_THRESHOLD)
+      ? "#4CAF50" : "#FF9800";
+
+  page += String("<div class='card' style='background-color:")
+        + indoorPlantColor + ";'><div class='icon'>🌿</div>";
+  page += "<h3>Indoor Plant Status</h3>";
+  page += String("<div class='value'>")
+        + ((vpdIndoor >= VPD_LOW_THRESHOLD && vpdIndoor <= VPD_HIGH_THRESHOLD)
+           ? "Optimal" : "Not Optimal")
+        + "</div></div>";
+
+  page += String("<div class='card' style='background-color:")
+        + outdoorPlantColor + ";'><div class='icon'>🌳</div>";
+  page += "<h3>Outdoor Plant Status</h3>";
+  page += String("<div class='value'>")
+        + ((vpdOutdoor >= VPD_LOW_THRESHOLD && vpdOutdoor <= VPD_HIGH_THRESHOLD)
+           ? "Optimal" : "Not Optimal")
+        + "</div></div>";
+
+  page += "</body></html>";
+  webServer.send(200, "text/html", page);
+}
+// ====================Things speak functions=================
+
+// This function calculates a plant health score (0–100) based on the current VPD value.
+//The closer the VPD is to the optimal range, the higher the score.
+float calculatePlantHealth(float vpd) {
+  if (vpd < 0) return 0;  // sensor error
+
+  float optimalCenter = (VPD_LOW_THRESHOLD + VPD_HIGH_THRESHOLD) / 2.0;
+  float optimalRange  = (VPD_HIGH_THRESHOLD - VPD_LOW_THRESHOLD) / 2.0;
+
+  float distance = abs(vpd - optimalCenter);
+
+  // Linear degradation
+  float health = 100.0 * (1.0 - (distance / (optimalRange * 2.0)));
+
+  // Clamp to 0–100
+  if (health < 0)   health = 0;
+  if (health > 100) health = 100;
+
+  return health;
+}
+// ==================== THINGSPEAK UPLOAD ====================
+void uploadToThingSpeak() {
+  ThingSpeak.setField(1, vpdIndoor);
+  ThingSpeak.setField(2, vpdOutdoor);
+  ThingSpeak.setField(3, leafSensorRaw);
+  ThingSpeak.setField(4, leafIsDry ? 1 : 0);
+  ThingSpeak.setField(5, fanState ? 1 : 0);
+  ThingSpeak.setField(6, mistState ? 1 : 0);
+  
+ // ==================  Plant Growth Status ==================
+
+
+float indoorPlantHealth  = calculatePlantHealth(vpdIndoor);
+float outdoorPlantHealth = calculatePlantHealth(vpdOutdoor);
+
+ThingSpeak.setField(7, indoorPlantHealth);
+ThingSpeak.setField(8, outdoorPlantHealth);
+
+  
+  // ==============================================================
+  int httpCode = ThingSpeak.writeFields(THINGSPEAK_CHANNEL, THINGSPEAK_API_KEY);
+  
+  if (httpCode == 200) {
+    Serial.println("[ThingSpeak] Upload successful");
+  } else {
+    Serial.printf("[ThingSpeak] Upload failed, HTTP code: %d\n", httpCode);
+  }
+}
+
+// ==================== Sensors Readings ====================
+void readAllSensors() {
+  Serial.println("\n--- SENSOR READINGS ---");
+  
+  // Read Indoor SHT31
+  tempIndoor = sht31_indoor.readTemperature();
+  humIndoor  = sht31_indoor.readHumidity();
+  
+  if (!isnan(tempIndoor) && !isnan(humIndoor)) {
+    vpdIndoor = calculateVPD(tempIndoor, humIndoor);
+    TEMP_IN_str = String(tempIndoor, 1) + " °C";
+    RH_IN_str   = String(humIndoor, 0) + " %";
+    VPD_IN_str  = String(vpdIndoor, 2) + " kPa";
+    
+    Serial.printf("[Indoor]  Temp: %.1f°C | RH: %.0f%% | VPD: %.2f kPa\n", 
+                  tempIndoor, humIndoor, vpdIndoor);
+  } else {
+    Serial.println("[Indoor]  ERROR reading sensor!");
+    vpdIndoor = -1;
+  }
+  
+  // Read Outdoor SHT31
+  tempOutdoor = sht31_outdoor.readTemperature();
+  humOutdoor  = sht31_outdoor.readHumidity();
+  
+  if (!isnan(tempOutdoor) && !isnan(humOutdoor)) {
+    vpdOutdoor = calculateVPD(tempOutdoor, humOutdoor);
+    TEMP_OUT_str = String(tempOutdoor, 1) + " °C";
+    RH_OUT_str   = String(humOutdoor, 0) + " %";
+    VPD_OUT_str  = String(vpdOutdoor, 2) + " kPa";
+    
+    Serial.printf("[Outdoor] Temp: %.1f°C | RH: %.0f%% | VPD: %.2f kPa\n", 
+                  tempOutdoor, humOutdoor, vpdOutdoor);
+  } else {
+    Serial.println("[Outdoor] ERROR reading sensor!");
+    vpdOutdoor = -1;
+  }
+  
+  // Read Leaf Sensor
+leafSensorRaw = readLeafSensorFiltered();
+  leafIsDry = isLeafDry(leafSensorRaw);
+  LEAF_str = getLeafStatusText(leafSensorRaw);
+  
+  Serial.printf("[Leaf]    Raw: %d | Status: %s\n", 
+                leafSensorRaw, leafIsDry ? "DRY" : "NOT DRY");
+}
+
+// ==================== SETUP ====================
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  
+  Serial.println("\n========================================");
+  Serial.println("  MINI-GREENHOUSE VPD CONTROL SYSTEM");
+  Serial.println("  ESP32 Firebeetle WROOM 32E");
+  Serial.println("========================================\n");
+  
+  // Initialize GPIO
+  pinMode(PIN_FAN_RELAY, OUTPUT);
+  digitalWrite(PIN_FAN_RELAY, LOW);  // Start with fan OFF
+
+  // ==================== ADC Configurations ====================
+  // Set pin attenuation to 11dB 
+  analogSetPinAttenuation(PIN_LEAF_SENSOR, ADC_11db);
+  
+  // Set ADC resolution to 12-bit (0-4095)
+  analogReadResolution(12);
+
+  pinMode(PIN_LEAF_SENSOR, INPUT);
+  
+  // Initialize I2C buses
+  Serial.println("[I2C] Initializing buses...");
+  I2C_Indoor.begin(SDA1_PIN, SCL1_PIN);
+  I2C_Outdoor.begin(SDA2_PIN, SCL2_PIN);
+  
+  // Initialize Indoor SHT31
+  Serial.print("[SHT31] Indoor sensor... ");
+  if (sht31_indoor.begin(0x44)) {
+    Serial.println("OK");
+  } else {
+    Serial.println("FAILED! Check wiring.");
+    // Continue anyway - might work later
+  }
+  
+  // Initialize Outdoor SHT31
+  Serial.print("[SHT31] Outdoor sensor... ");
+  if (sht31_outdoor.begin(0x44)) {
+    Serial.println("OK");
+  } else {
+    Serial.println("FAILED! Check wiring.");
+  }
+  
+  // Initialize WiFi
+  setupWiFi();
+  
+  // Initialize MQTT
+  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+  
+  // Initialize ThingSpeak
+  ThingSpeak.begin(wifiClient);
+  
+  // Initialize Web Server
+  webServer.on("/", handleRoot);
+  webServer.begin();
+  Serial.println("[WebServer] Started on port 80");
+  
+  Serial.println("\n[SYSTEM] Initialization complete!");
+  Serial.println("========================================\n");
+}
+
+// ==================== MAIN LOOP ====================
+void loop() {
+  unsigned long currentMillis = millis();
+  
+  // Handle web server requests
+  webServer.handleClient();
+  
+  // Maintain MQTT connection
+  if (!mqttClient.connected()) {
+    reconnectMQTT();
+  }
+  mqttClient.loop();
+  
+  // Read sensors and run control logic at interval
+  if (currentMillis - lastSensorRead >= SENSOR_READ_INTERVAL) {
+    lastSensorRead = currentMillis;
+    
+    readAllSensors();
+    runControlLogic();
+  }
+  
+  // Upload to ThingSpeak at interval
+  if (currentMillis - lastThingSpeakUpload >= THINGSPEAK_INTERVAL) {
+    lastThingSpeakUpload = currentMillis;
+    
+    uploadToThingSpeak();
+  }
+  
+  // Small delay to prevent watchdog issues
+  delay(10);
+}
