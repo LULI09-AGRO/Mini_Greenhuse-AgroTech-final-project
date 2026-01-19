@@ -2,11 +2,17 @@
 This project monitors and controls VPD in a small greenhouse. Temperature and humidity are measured to calculate VPD, which drives a fan or mist to optimize conditions.
 
 ## Table of Contents
+## Table of Contents
 - [Introduction](#introduction)
 - [Background - VPD and Tomatoes](#background---vpd-and-tomatoes)
+  - [VPD](#vpd)
+  - [Tomatoes](#tomatoes-)
 - [Hardware and assembly](#hardware-and-assembly)
-- [Data Collected](#data-collected)
-- [VPD Control Logic](#vpd-control-logic)
+  - [Electronics](#electronics)
+  - [General Structure](#general-structure)
+  - [Data Collected](#data-collected)
+  - [VPD Control Logic](#vpd-control-logic)
+
 
 
 ## Introduction
@@ -76,6 +82,8 @@ We decided in this project to simulates the vegetative growth phase of tomato pl
 
 
 ## Hardware and assembly
+
+### Electronics
 
 1. [**FireBeetle 2 ESP32-E**](https://wiki.dfrobot.com/FireBeetle_Board_ESP32_E_SKU_DFR0654) 
    - Microcontroller for sensor reading and actuator control  
