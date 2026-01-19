@@ -64,7 +64,7 @@ We dcieded in this project simulates the vegetative growth phase of tomato plant
 
 2. [**SHT31 Temperature & Humidity Sensor**](https://wiki.dfrobot.com/SHT31_Temperature_Humidity_Sensor_Weatherproof_SKU_SEN0385)
    - One sensor inside the greenhouse  
-   - One sensor outside for reference and fan control  
+   - One sensor outside for reference and control group   
 <img src="https://github.com/user-attachments/assets/7d1fa548-46a7-4f3a-b27e-206cbe59a1ba" width="150" />
 
 3. [**Leaf Wetness Sensor**](https://store.comwintop.com/products/outdoor-leaf-surface-temperature-and-humidity-moisture-sensor-transmitter-with-rs485-4-20ma-0-5v-output)  
@@ -72,14 +72,16 @@ We dcieded in this project simulates the vegetative growth phase of tomato plant
 <img src="https://github.com/user-attachments/assets/8ebb374a-412e-4a11-8bb6-9abcf2a380d0" width="150" />
 
 4. [**Fan**](https://electronicworld.co.in/product/arx-fd1290-s3033e-12v-dc-0-18a-bldc-cooling-fan/)  
-   - DC fan (5–12V depending on model) for ventilation and VPD control  
-   - Controlled via **relay**  
+   - DC fan for ventilation and VPD control  
+   - Controlled via **relay**
+   <img width="150" height="577" alt="image" src="https://github.com/user-attachments/assets/eb7c1e60-81b1-43ff-a0dd-e6202e175524" />
+  
 
-5. **Buck Converter**  
+5. [**Buck Converter**](https://makershop.ie/DC-DC-Buck-5A?srsltid=AfmBOopnSkC795zfUkoyGhVDZ3jdFz4jpy8cIv-9Tf6MlFavQI_Tk2by)  
    - Converts 12V supply to 5V for ESP32 and sensors  
 <img src="https://github.com/user-attachments/assets/6b067c58-f87a-41ff-b429-d868455b7664" width="150" />
 
-6. **Relay**  
+6. [**Relay**](https://www.canadarobotix.com/products/1222?srsltid=AfmBOop1InxmUd8Y3Ksddc2EDyfmVhSQLMjM_4GOhNUmd4CgTlvdJLzY)  
    - Controls Fan and Mist power circuits
 <img width="150" height="720" alt="image" src="https://github.com/user-attachments/assets/e4772b01-e083-4227-a8a8-5f0f9f07df43" />
 
@@ -95,13 +97,15 @@ The greenhouse is a **plastic box** creating a controlled microclimate.
   - Mist sprayer  
 
 The system monitors both indoor and outdoor conditions to decide whether to **ventilate** or **spray mist**.
-
+<p align="center">
+<img width="627" height="610" alt="image" src="https://github.com/user-attachments/assets/61207f94-0f7f-4db1-8b72-5170a7862db1" />
+</p>
 
 ### [Data Collected](https://thingspeak.mathworks.com/channels/3222028)
 
-1. **VPD** (calculated from temperature & humidity via SHT31)   - 
+1. **VPD** (calculated from temperature & humidity via SHT31)   - both indoor and outdoor
 2. **Leaf Wetness** (via analog sensor)  
-3. **Plant Growth Status** (based on VPD range: optimal → +1, suboptimal → -1)  
+3. **Plant Growth Status** (based on VPD range: 0-100 - 0 for bad grouth conditions 100 for the best)  
 4. **Fan State** (1 for ON ; 0 for OFF)
 5. **Mist state** (1 for ON ; 0 for OFF)
 
