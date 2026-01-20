@@ -9,7 +9,7 @@ This project monitors and controls VPD in a small greenhouse. Temperature and hu
 - [Hardware and assembly](#hardware-and-assembly)
   - [Electronics](#electronics)
   - [General Structure](#general-structure)
-  - [Setup Wiring](setup-wiring)
+  - [Setup Wiring](#setup-wiring)
   - [Data Collected](#data-collected)
   - [VPD Control Logic](#vpd-control-logic)
 
