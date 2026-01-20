@@ -27,6 +27,7 @@ This project monitors and controls VPD in a small greenhouse. Temperature and hu
 
 ### Media
 - [ESP32 Wiring Scheme](ESP32_SCHEME.jpg)
+- [Pictures and Videos](https://github.com/LULI09-AGRO/Mini-Greenhuse---AgroTech-final-project/blob/main/images/Demonstration)
 
 ---
 
