@@ -13,7 +13,7 @@ This project monitors and controls VPD in a small greenhouse. Temperature and hu
   - [Data Collected](#data-collected)
   - [VPD Control Logic](#vpd-control-logic)
 - [Instructions](#instructions)
-  - [Hardware](#hardware-1)
+  - [Hardware](#hardware)
   - [Software](#software)
 - [Control and DATA](#control-and-data)
 
@@ -59,7 +59,7 @@ SVP = 0.6108 × exp(17.27 × T / (T + 237.3))
 * RH = Relative Humidity (%)
 * VPD result in kPa
 
-### Tomatoes 🍅 
+### Tomatoes 
 
 Tomato is part of the Solanaceae family, which also includes potato and tobacco. It is one of the most consumed vegetables in the world after potato, with an annual global production of approximately 180–190 million metric tons and an average consumption of around 20 kg per person worldwide.  
 Tomato is also one of the most commonly used model plants in plant science and plant physiology.
