@@ -124,7 +124,7 @@ The greenhouse is a **plastic box** creating a controlled microclimate.
 
 The system monitors both indoor and outdoor conditions to decide whether to **ventilate** or **spray mist**.
 <p align="center">
-<img width="627" height="610" alt="image" src="https://github.com/user-attachments/assets/61207f94-0f7f-4db1-8b72-5170a7862db1" />
+<img width="565" height="597" alt="image" src="https://github.com/user-attachments/assets/571eaee7-88a2-4c11-b926-49f25b561075" />
 </p>
 
 ### [Data Collected](https://thingspeak.mathworks.com/channels/3222028)
