@@ -59,7 +59,7 @@ Transpiration is the movement of water from the roots through the xylem into the
 Therefore, VPD has a major impact on plant growth and fruit production, making it a critical parameter to monitor and control in greenhouse environments.
 
 <p align="center">
-<img width="300" height="676" alt="image" src="https://github.com/user-attachments/assets/5fc37e92-b156-4970-aa00-13122fd66a40" />
+<img width="500" height="676" alt="image" src="https://github.com/user-attachments/assets/5fc37e92-b156-4970-aa00-13122fd66a40" />
 </p>
 Stomatal conductance is the rate of gas exchange between the leaf and the atmosphere through the stomata, regulating transpiration and CO₂ uptake for photosynthesis.
 
@@ -83,7 +83,7 @@ Tomato is also one of the most commonly used model plants in plant science and p
 Therefore, its optimal growing conditions and the effects of environmental factors on its growth have been studied for several decades. From the literature, it is clear that VPD has a significant effect on tomato crop production:
 
 <p align="center">
-<img width="500" height="406" alt="image" src="https://github.com/user-attachments/assets/51aa1dba-0671-4227-a43c-03e469becc4f" />
+<img width="600" height="406" alt="image" src="https://github.com/user-attachments/assets/51aa1dba-0671-4227-a43c-03e469becc4f" />
 </p>
 
 >Yu X., Niu L., Zhang Y., Xu Z., Zhang J., Zhang S., & Li J. (2024). Vapour pressure deficit affects crop water productivity, yield, and quality in tomatoes.
@@ -123,12 +123,12 @@ We decided in this project to simulates the vegetative growth phase of tomato pl
 4. [**Fan**](https://electronicworld.co.in/product/arx-fd1290-s3033e-12v-dc-0-18a-bldc-cooling-fan/)  
    - DC fan for ventilation and VPD control  
    - Controlled via **relay**
-   <img width="150" height="577" alt="image" src="https://github.com/user-attachments/assets/eb7c1e60-81b1-43ff-a0dd-e6202e175524" />
+<img src="https://github.com/user-attachments/assets/eb7c1e60-81b1-43ff-a0dd-e6202e175524" width="200" />
   
 
 5. [**Buck Converter**](https://makershop.ie/DC-DC-Buck-5A?srsltid=AfmBOopnSkC795zfUkoyGhVDZ3jdFz4jpy8cIv-9Tf6MlFavQI_Tk2by)  
    - Converts 12V supply to 5V for ESP32 and sensors  
-<img src="https://github.com/user-attachments/assets/6b067c58-f87a-41ff-b429-d868455b7664" width="150" />
+<img src="https://github.com/user-attachments/assets/6b067c58-f87a-41ff-b429-d868455b7664" width="200" />
 
 6. [**Relay**](https://www.canadarobotix.com/products/1222?srsltid=AfmBOop1InxmUd8Y3Ksddc2EDyfmVhSQLMjM_4GOhNUmd4CgTlvdJLzY)  
    - Controls Fan and Mist power circuits
@@ -245,6 +245,6 @@ From there, the page updates live with:
 </p>
 
 <p align="center">
-  <img width="200" height="485" alt="image" src="https://github.com/user-attachments/assets/67ed01b9-1e81-45d9-9cce-deb3681b5af2" />
+  <img width="300" height="485" alt="image" src="https://github.com/user-attachments/assets/67ed01b9-1e81-45d9-9cce-deb3681b5af2" />
 
 </p>
