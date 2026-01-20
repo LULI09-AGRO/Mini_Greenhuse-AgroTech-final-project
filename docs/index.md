@@ -132,6 +132,7 @@ We decided in this project to simulates the vegetative growth phase of tomato pl
 
 6. [**Relay**](https://www.canadarobotix.com/products/1222?srsltid=AfmBOop1InxmUd8Y3Ksddc2EDyfmVhSQLMjM_4GOhNUmd4CgTlvdJLzY)  
    - Controls Fan and Mist power circuits
+     
 <img src="https://github.com/user-attachments/assets/e4772b01-e083-4227-a8a8-5f0f9f07df43" width="150" />
 
 _Parts Summary_
