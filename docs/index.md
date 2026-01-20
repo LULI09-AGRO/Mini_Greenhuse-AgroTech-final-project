@@ -213,21 +213,8 @@ The system targets a VPD range of **0.8–1.2 kPa**, corresponding to the vegeta
 | **VPD too high + leaf wet**            | No action – misting is blocked to prevent over-wetting and leaf rot |
 | **VPD within optimal range**           | All actuators OFF |
 
-```mermaid
-flowchart TD
-    A[VPD too low indoor]
-    A -->|Yes| B[Outdoor air dry and temp > 18°C]
-    A -->|No| E[VPD too high indoor]
+<img width="622" height="476" alt="image" src="https://github.com/user-attachments/assets/545b5ea5-8405-4e1e-89aa-bca988540b83" />
 
-    B -->|Yes| C[Fan ON]
-    B -->|No| D[All OFF]
-
-    E -->|Yes| F[Leaf dry]
-    E -->|No| D
-
-    F -->|Yes| G[Mist ON MQTT]
-    F -->|No| D
-```
 
 ### User Interface
 
