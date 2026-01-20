@@ -74,7 +74,7 @@ The general recommended VPD range for each growth phase is as follows:
 | Growth Phase        | Optimal VPD Range (kPa) |
 |---------------------|-------------------------|
 | Germination         | 0.4 – 0.8               |
-| Vegetative Growth   | 0.8 – 1.1               |
+| Vegetative Growth   | 0.8 – 1.2               |
 | Flowering           | 1.0 – 1.2               |
 | Fruiting            | 1.2 – 1.6               |
 
@@ -150,11 +150,11 @@ Follow these steps to flash the firmware and start monitoring
 ### _i. Install Libraries_
 **Ensure the following libraries are installed in your Arduino IDE:**
 
-• Adafruit_SHT31 (for environmental sensing)
+• [Adafruit_SHT31 (for environmental sensing)](https://docs.arduino.cc/libraries/adafruit-sht31-library/)
 
-• PubSubClient (for MQTT communication) 
+• [PubSubClient (for MQTT communication)](http://pubsubclient.knolleary.net/) 
 
-• ThingSpeak (for data logging)
+• [ThingSpeak (for data logging)](https://docs.arduino.cc/libraries/thingspeak/#Compatibility)
 
 ### _ii. Communication Details (Open the code and fill in your credentials)_
  WiFi Update WIFI_SSID and WIFI_PASSWORD 
