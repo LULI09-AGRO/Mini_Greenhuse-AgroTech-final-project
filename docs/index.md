@@ -22,8 +22,8 @@ This project monitors and controls VPD in a small greenhouse. Temperature and hu
 ## Project Files
 
 ### Code
-- [Full Code – Warm Weather](Full Code - For Warm Weather)
-- [Demonstration Code](Demonstration Code)
+- [[Full Code – Warm Weather]([Full Code - For Warm Weather](https://github.com/LULI09-AGRO/Mini-Greenhuse---AgroTech-final-project/blob/main/Full%20Code%20-%20for%20warm%20weather))](https://github.com/LULI09-AGRO/Mini-Greenhuse---AgroTech-final-project/blob/main/Full%20Code%20-%20for%20warm%20weather)
+- [[Demonstration Code](Demonstration Code)](https://github.com/LULI09-AGRO/Mini-Greenhuse---AgroTech-final-project/blob/main/Demonstration%20Code)
 
 ### Media
 - [ESP32 Wiring Scheme](ESP32_SCHEME.jpg)
