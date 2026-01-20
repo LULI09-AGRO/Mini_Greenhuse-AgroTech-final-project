@@ -129,8 +129,8 @@ We decided in this project to simulates the vegetative growth phase of tomato pl
 5. [**Buck Converter**](https://makershop.ie/DC-DC-Buck-5A?srsltid=AfmBOopnSkC795zfUkoyGhVDZ3jdFz4jpy8cIv-9Tf6MlFavQI_Tk2by)  
    - Converts 12V supply to 5V for ESP32 and sensors  
 <img src="https://github.com/user-attachments/assets/6b067c58-f87a-41ff-b429-d868455b7664"
-     width="150"
-     height="120" />
+     width="50"
+     height="40" />
 
 6. [**Relay**](https://www.canadarobotix.com/products/1222?srsltid=AfmBOop1InxmUd8Y3Ksddc2EDyfmVhSQLMjM_4GOhNUmd4CgTlvdJLzY)  
    - Controls Fan and Mist power circuits
