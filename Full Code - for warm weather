@@ -1,21 +1,19 @@
-/*************************************************************
+/*********************
  * PROJECT: Mini-Greenhouse VPD Control System
  * BOARD: ESP32 Firebeetle WROOM 32E
- * 
- * FEATURES:
+ * * FEATURES:
  * - Dual SHT31 sensors (Indoor + Outdoor VPD)
- * - Leaf wetness sensor (analog)
- * - Fan control via relay (when VPD too LOW)
+ * - Leaf wetness sensor (analog) - 0 (dry) to 4095 (soaking wet)
+ * - Fan control via relay (when VPD too LOW + outdoor air dry + temp > 18°C)
  * - Mist sprayer control via MQTT (when VPD too HIGH + leaf is dry)
  * - ThingSpeak data logging
  * - Local web server for status display
- * 
- * CONTROL LOGIC:
+ * * CONTROL LOGIC:
  * - When VPD is too high and leaf is dry → Activate mist sprayer (MQTT)
  * - When VPD is too high but leaf is wet → Do nothing (leaf already moist - risking leaf rot)
- * - when VPD is too LOW → Activate fan
+ * - when VPD is too LOW → Activate fan(only if outdoor air is dry AND temp > 18°C)
  * - VPD optimal → All off
- ************************************************************/
+ ********************/
 
 // ==================== Libraries Needed ====================
 #include <Arduino.h>
@@ -27,26 +25,24 @@
 #include <WiFiUdp.h>
 #include <WebServer.h>
 
-// NOTE: All credentials are placeholders and must be replaced with real values before deployment
-
 // ==================== WIFI Configuration====================
-const char* WIFI_SSID     = "123"; // Enter WIFI SSID
-const char* WIFI_PASSWORD = "123"; // Enter WIFI password
+const char* WIFI_SSID     = "123";
+const char* WIFI_PASSWORD = "123";
 
 // ==================== MQTT Configuration ====================
-const char* MQTT_SERVER   = "123"; // Enter your MQTT server
-const int   MQTT_PORT     = 123; // Enter your MQTT port
-const char* MQTT_USER     = "123"; // Enter MQTT username
-const char* MQTT_PASSWORD = "123"; // Enter MQTT password
-const char* MQTT_TOPIC    = "123";// Enter topic - The solenoid controller MUST!! be subscribed to the exact same topic
+const char* MQTT_SERVER   = "123";
+const int   MQTT_PORT     = 123;
+const char* MQTT_USER     = "mqtt-user";
+const char* MQTT_PASSWORD = "123";
+const char* MQTT_TOPIC    = "123";
 
 // ==================== THINGSPEAK Configuration ====================
 unsigned long THINGSPEAK_CHANNEL = 123;       // Replace with your channel number
-const char*   THINGSPEAK_API_KEY = "123";     // Replace with your Write API Key
+const char* THINGSPEAK_API_KEY = "123";     // Replace with your Write API Key
 
 // ==================== Harware Pin Maping ====================
 // Fan relay control
-#define PIN_FAN_RELAY    D2      // Mapped to GPIO25
+#define PIN_FAN_RELAY    D2       // Mapped to GPIO25
 
 // Leaf wetness sensor 
 #define PIN_LEAF_SENSOR  36  // Analog input 
@@ -60,13 +56,12 @@ const char*   THINGSPEAK_API_KEY = "123";     // Replace with your Write API Key
 #define SCL2_PIN         16      // D11 on Firebeetle
 
 // ==================== VPD Control Variables ====================
-// VPD measured in kPa - optimal range is set to: 0.8 - 1.2 kPa
+// VPD measured in kPa - optimal range is set to: 0.8 - 1.2 kPa - for colder weather
 const float VPD_LOW_THRESHOLD  = 0.8; // Below this → Fan ON (increase VPD)
 const float VPD_HIGH_THRESHOLD = 1.2;   // Above this → Mist ON (decrease VPD)
 
 // Leaf wetness thresholds (0-4095 analog range)
 // Lower value = Drier leaf, Higher value = Wetter leaf
-
 const int LEAF_DRY_THRESHOLD   = 500;   // Below this = DRY
 const int LEAF_WET_THRESHOLD   = 1200;  // Above this = TOO WET
 const int HYSTERESIS_BUFFER    = 200;   // Prevents the system from glitching due to noise and minor measurement differences
@@ -108,6 +103,10 @@ bool leafIsDry    = false;
 bool fanState     = false;   // false = OFF, true = ON
 bool mistState    = false;   // false = OFF, true = ON
 
+// --- NEW MQTT STATE VARIABLES (FROM BLOCK 2) ---
+bool mistDesiredState = false;
+bool mistPublishPending = false;
+
 // Timing trackers
 unsigned long lastSensorRead    = 0;
 unsigned long lastThingSpeakUpload = 0;
@@ -136,8 +135,7 @@ bool leafBufferFilled = false;         // Has the buffer wrapped around
 /*
  * VPD Formula:
  * VPD = SVP × (1 - RH/100)
- * 
- * Where SVP (Saturation Vapor Pressure) = 0.6108 × exp(17.27 × T / (T + 237.3))
+ * * Where SVP (Saturation Vapor Pressure) = 0.6108 × exp(17.27 × T / (T + 237.3))
  * T = Temperature in Celsius
  * RH = Relative Humidity in %
  * Result in kPa
@@ -156,7 +154,7 @@ float calculateVPD(float temp, float humidity) {
   return vpd;
 }
 
-// ==================== Leaf Sensor Functions ====================
+// ==================== Leas Sensor Functions ====================
 
 // Creating String for HTML web page
 String getLeafStatusText(int reading) {
@@ -207,6 +205,7 @@ int readLeafSensorFiltered() {
 // Checing fan state function
 void setFanState(bool on) {
   fanState = on;
+  
   digitalWrite(PIN_FAN_RELAY, on ? LOW : HIGH);
   FAN_str = on ? "ON" : "OFF";
   
@@ -214,21 +213,12 @@ void setFanState(bool on) {
   Serial.println(on ? "ON" : "OFF");
 }
 
-// Checking mist state function
+// --- UPDATED setMistState (FROM BLOCK 2) ---
+// Instead of publishing immediately (blocking), we just set a flag.
 void setMistState(bool on) {
-  // Only send MQTT if state actually changes
-  if (on != mistState) {
-    mistState = on;
-    MIST_str = on ? "ON" : "OFF";
-    
-    // Publish to MQTT
-    if (mqttClient.connected()) {
-      mqttClient.publish(MQTT_TOPIC, on ? "1" : "0");
-      Serial.print("[MQTT] Published mist command: ");
-      Serial.println(on ? "OPEN (1)" : "CLOSE (0)");
-    } else {
-      Serial.println("[MQTT] Warning: Not connected, command not sent");
-    }
+  if (on != mistDesiredState) {
+    mistDesiredState = on;
+    mistPublishPending = true;
   }
 }
 
@@ -247,7 +237,8 @@ void runControlLogic() {
   bool shouldFanBeOn  = false;
   bool shouldMistBeOn = false;
   
-  // CASE 1: VPD too LOW → Turn fan ON to increase air circulation, if temprature IN too low and RH OUT too high → fan will not turn ON
+  // CASE 1: VPD too LOW → Turn fan ON to increase air circulation
+  // Fan ON only when VPD low AND (outdoor air is dry) AND (temp > 18°C)
   if (vpdIndoor < VPD_LOW_THRESHOLD) {
     if (humOutdoor < 60 && tempIndoor > 18.0) {
       shouldFanBeOn = true;
@@ -261,8 +252,7 @@ void runControlLogic() {
     }
   }
   // CASE 2: VPD too HIGH → Check leaf before activating mist
-  // Leaf wetness acts as a safety condition:
-// VPD can request misting, but leaf wetness can block it
+  // Mist ON when VPD high AND leaf is dry (prevents over-wetting and leaf rot)
   else if (vpdIndoor > VPD_HIGH_THRESHOLD) {
     shouldFanBeOn = false;
     
@@ -283,6 +273,8 @@ void runControlLogic() {
   }
   
   // HYSTERESIS (correct and robust)
+  // Hysteresis prevents rapid on/off due to sensor noise
+
   if (mistState) {
     if (leafSensorRaw > (LEAF_WET_THRESHOLD + HYSTERESIS_BUFFER)) {
       shouldMistBeOn = false;
@@ -301,7 +293,8 @@ void runControlLogic() {
     setFanState(shouldFanBeOn);
   }
   
-  if (shouldMistBeOn != mistState) {
+  // Note: setMistState is now non-blocking
+  if (shouldMistBeOn != mistDesiredState) {
     setMistState(shouldMistBeOn);
   }
 }
@@ -329,7 +322,7 @@ void setupWiFi() {
   }
 }
 
-// ==================== MQTT Function ====================
+// ==================== MQTT Functions ====================
 void reconnectMQTT() {
   if (!mqttClient.connected()) {
     Serial.print("[MQTT] Attempting connection...");
@@ -340,6 +333,23 @@ void reconnectMQTT() {
       Serial.print(" Failed, rc=");
       Serial.println(mqttClient.state());
     }
+  }
+}
+
+// --- NEW FUNCTION (FROM BLOCK 2) ---
+// This function attempts to publish the pending mist state in the loop
+void tryPublishMist() {
+  if (!mistPublishPending) return;
+  if (!mqttClient.connected()) return;
+
+  const char* msg = mistDesiredState ? "1" : "0";
+  if (mqttClient.publish(MQTT_TOPIC, msg)) {
+    mistState = mistDesiredState;
+    mistPublishPending = false;
+    MIST_str = mistState ? "ON" : "OFF";
+
+    Serial.print("[MQTT] Mist command sent: ");
+    Serial.println(msg);
   }
 }
 
@@ -506,8 +516,7 @@ page += String("<div class='value'>Mist: <span class='")
 }
 // ====================Things speak functions=================
 
-// This function calculates a plant health score (0–100) based on the current VPD value.
-//The closer the VPD is to the optimal range, the higher the score.
+// This function calculates a plant health score (0–100) based on the current VPD value. The closer the VPD is to the optimal range, the higher the score.
 float calculatePlantHealth(float vpd) {
   if (vpd < 0) return 0;  // sensor error
 
@@ -613,7 +622,9 @@ void setup() {
   
   // Initialize GPIO
   pinMode(PIN_FAN_RELAY, OUTPUT);
-  digitalWrite(PIN_FAN_RELAY, LOW);  // Start with fan OFF
+  digitalWrite(PIN_FAN_RELAY, HIGH); 
+  // Relay: (LOW = fan ON; HIGH = fan OFF)
+
 
   // ==================== ADC Configurations ====================
   // Set pin attenuation to 11dB 
@@ -668,6 +679,10 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
   
+  // --- ADDED FROM BLOCK 2: Non-blocking MQTT Publish ---
+  tryPublishMist(); 
+  // -----------------------------------------------------
+
   // Handle web server requests
   webServer.handleClient();
   
