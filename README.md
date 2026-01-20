@@ -16,7 +16,7 @@ This project monitors and controls VPD in a small greenhouse. Temperature and hu
 - [Control and DATA](#control-and-data)
     - [Data Collected](#data-collected)
     - [VPD Control Logic](#vpd-control-logic)
-    - [User Interface](user-interface)
+    - [User Interface](#user-interface)
 
 ---
 
