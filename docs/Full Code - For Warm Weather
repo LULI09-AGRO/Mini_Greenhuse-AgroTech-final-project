@@ -1,3 +1,10 @@
+---
+layout: default
+title: Code
+---
+
+# Code
+
 /*********************
  * PROJECT: Mini-Greenhouse VPD Control System
  * BOARD: ESP32 Firebeetle WROOM 32E
