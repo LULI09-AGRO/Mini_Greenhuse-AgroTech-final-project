@@ -3,7 +3,7 @@ layout: default
 title: Pictures and Videos
 ---
 
-# Pictures
+# Pictures and Videos
 
 
 ## In action Video
