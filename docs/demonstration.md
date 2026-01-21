@@ -37,6 +37,7 @@ title: Pictures and Videos
 
 
 <p align="center">
-  <img width="400" height="485" alt="image" src="https://github.com/user-attachments/assets/67ed01b9-1e81-45d9-9cce-deb3681b5af2" />
+<img width="200" alt="image"
+     src="https://github.com/user-attachments/assets/67ed01b9-1e81-45d9-9cce-deb3681b5af2" />
 
 </p>
