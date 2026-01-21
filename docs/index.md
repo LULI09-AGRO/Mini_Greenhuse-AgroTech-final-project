@@ -25,6 +25,7 @@ This project monitors and controls VPD in a small greenhouse. Temperature and hu
     - [Data Collected](#data-collected)
     - [VPD Control Logic](#vpd-control-logic)
     - [User Interface](#user-interface)
+- [Solutions and Further Steps](#solutions-and-further-steps)
 
 ---
 
@@ -243,4 +244,9 @@ From there, the page updates live with:
 - 💦 Mist sprayer status
 - 📈 Optimality for growth status
 
+
+## Solutions and Further Steps
+The goal of the control system was ultimately to maintain an optimal VPD range for the plant’s growth stage.
+During system operation, an important parameter that was not controlled became apparent: temperature control. Due to cold nights, the VPD dropped to very low levels, with no possibility of compensation, since humidity was the only parameter under active control.
+Therefore, as future improvements, additional devices enabling temperature control—such as heaters or similar equipment—would be integrated into the system.
 
