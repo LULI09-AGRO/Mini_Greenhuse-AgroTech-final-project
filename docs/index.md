@@ -26,6 +26,7 @@ This project monitors and controls VPD in a small greenhouse. Temperature and hu
     - [VPD Control Logic](#vpd-control-logic)
     - [User Interface](#user-interface)
 - [Solutions and Further Steps](#solutions-and-further-steps)
+- [Updates After Group Meeting](#updates-after-gruop-meeting)
 
 ---
 
@@ -251,4 +252,11 @@ From there, the page updates live with:
 The goal of the control system was ultimately to maintain an optimal VPD range for the plant’s growth stage.
 During system operation, an important parameter that was not controlled became apparent: temperature control. Due to cold nights, the VPD dropped to very low levels, with no possibility of compensation, since humidity was the only parameter under active control.
 Therefore, as future improvements, additional devices enabling temperature control, such as heaters or similar equipment, would be integrated into the system.
+
+
+## Updates After Group Meeting
+During the group meeting, a potential issue was raised that could lead to over-watering of the plant and, ultimately, rot. The concern is that the SHT31 sensor we are using takes some time to provide the most accurate reading. Since the mist sprayer is controlled, among other things, based on this sensor’s measurements, it is possible that the humidity in the greenhouse has already reached or even exceeded the optimal level while the sensor has not yet updated to reflect the current value.
+
+As a result, we were advised to implement a pulse control mechanism for the mist sprayer, which operates as follows:
+<img width="650" height="722" alt="image" src="https://github.com/user-attachments/assets/901ab1c7-bd89-4eb1-a25a-dd7dfb0a32f2" />
 
