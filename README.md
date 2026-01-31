@@ -231,3 +231,26 @@ From there, the page updates live with:
 - 💦 Mist sprayer status
 - 📈 Optimality for growth status
 
+
+## Updates After Group Meeting
+During the group meeting, a potential issue was raised that could lead to over-watering of the plant and, ultimately, rot. The concern is that the SHT31 sensor we are using takes some time to provide the most accurate reading. Since the mist sprayer is controlled, among other things, based on this sensor’s measurements, it is possible that the humidity in the greenhouse has already reached or even exceeded the optimal level while the sensor has not yet updated to reflect the current value.
+
+As a result, we were advised to implement a pulse control mechanism for the mist sprayer, which operates as follows:
+
+```mermaid
+
+---
+config:
+  theme: neo
+  layout: elk
+---
+flowchart TB
+    A["VPD is High"] -- No --> B["Mist OFF"]
+    A -- Yes --> C["Is Leaf Dry?"]
+    C -- Yes --> D["Turn Mist ON For 5 sec"]
+    D --> E["Turn OFF For 20 sec While Reading Sensors"]
+    E --> G["VPD Still High And Leaf Is Not Wet"] & F["VPD Is Lower Or Leaf Is Wet"]
+    F --> B
+    G --> D
+    C -- No --> B
+```
