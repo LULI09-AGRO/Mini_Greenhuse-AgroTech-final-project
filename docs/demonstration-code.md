@@ -2,7 +2,6 @@
 layout: default
 title: Demonstration Code
 ---
-
 /*********************
  * PROJECT: Mini-Greenhouse VPD Control System
  * BOARD: ESP32 Firebeetle WROOM 32E
@@ -38,12 +37,12 @@ const char* WIFI_PASSWORD = "123";
 const char* MQTT_SERVER   = "123";
 const int   MQTT_PORT     = 123;
 const char* MQTT_USER     = "mqtt-user";
-const char* MQTT_PASSWORD = "123";
+const char* MQTT_PASSWORD = "1234";
 const char* MQTT_TOPIC    = "123";
 
 // ==================== THINGSPEAK Configuration ====================
 unsigned long THINGSPEAK_CHANNEL = 123;       // Replace with your channel number
-const char* THINGSPEAK_API_KEY = "123";     // Replace with your Write API Key
+const char*   THINGSPEAK_API_KEY = "123";     // Replace with your Write API Key
 
 // ==================== Harware Pin Maping ====================
 // Fan relay control
@@ -74,6 +73,10 @@ const int HYSTERESIS_BUFFER    = 200;   // Prevents the system from glitching du
 // ==================== Timing Configuration ====================
 const unsigned long SENSOR_READ_INTERVAL = 5000;    // Read sensors every 5 seconds
 const unsigned long THINGSPEAK_INTERVAL  = 20000;   // Upload every 20 seconds (ThingSpeak limit: 15s)
+
+// ==================== Mist Pulse Timing ====================
+const unsigned long MIST_ON_DURATION   = 5000;   // 5 seconds ON
+const unsigned long MIST_OFF_DURATION  = 20000;  // 20 seconds OFF (stabilization)
 
 // ==================== Global Configuration ====================
 // I2C buses for dual sensors
@@ -126,6 +129,11 @@ String VPD_OUT_str   = "--";
 String LEAF_str      = "--";
 String FAN_str       = "OFF";
 String MIST_str      = "OFF";
+
+// ==================== Mist Pulse State ====================
+bool mistPulseActive = false;     // Are we currently in a pulse cycle?
+bool mistPulseOn     = false;     // Is mist currently ON inside the pulse?
+unsigned long mistPulseTimer = 0; // Timestamp for pulse timing
 
 // ==================== Leaf Sensor Reading Function Variables ====================
 // Moving average 
@@ -199,7 +207,7 @@ int readLeafSensorFiltered() {
   }
 
   // Compute average
-  int count = leafBufferFilled ? LEAF_FILTER_SIZE : leafIndex;
+  int count = leafBufferFilled ? LEAF_FILTER_SIZE : max(leafIndex, 1);
   int average = leafSum / count;
 
   return average;
@@ -238,9 +246,11 @@ void runControlLogic() {
     Serial.println("[CONTROL] Sensor error - skipping control logic");
     return;
   }
-  
+  bool pulseMode = false;
   bool shouldFanBeOn  = false;
   bool shouldMistBeOn = false;
+  mistPulseActive = false;
+
   
   // CASE 1: VPD too LOW → Turn fan ON to increase air circulation
   // Fan ON only when VPD low AND (outdoor air is dry) AND (temp > 18°C)
@@ -258,29 +268,36 @@ void runControlLogic() {
   }
   // CASE 2: VPD too HIGH → Check leaf before activating mist
   // Mist ON when VPD high AND leaf is dry (prevents over-wetting and leaf rot)
-  else if (vpdIndoor > VPD_HIGH_THRESHOLD) {
-    shouldFanBeOn = false;
-    
-    if (leafIsDry) {
-      shouldMistBeOn = true;
-      Serial.printf("   → VPD HIGH (%.2f > %.2f) + Leaf DRY: Mist ON\n", 
-                    vpdIndoor, VPD_HIGH_THRESHOLD);
-    } else {
-      shouldMistBeOn = false;
-      Serial.printf("   → VPD HIGH but Leaf WET: Mist stays OFF\n");
-    }
-  }
-  // CASE 3: VPD in optimal range → Everything OFF
-  else {
-    shouldFanBeOn = false;
+ else if (vpdIndoor > VPD_HIGH_THRESHOLD) {
+  shouldFanBeOn = false;
+
+  if (leafIsDry) {
+    // Allow pulse logic to run
+    mistPulseActive = true;
+    pulseMode = true;
+    Serial.println("   → VPD HIGH + Leaf DRY: Mist pulse allowed");
+  } else {
+    mistPulseActive = false;
     shouldMistBeOn = false;
-    Serial.printf("   → VPD OPTIMAL (%.2f): All OFF\n", vpdIndoor);
+    Serial.println("   → VPD HIGH but Leaf WET: Mist blocked");
   }
-  
+}
+  // CASE 3: VPD in optimal range → Everything OFF
+ else {
+  shouldFanBeOn = false;
+  mistPulseActive = false;
+  shouldMistBeOn = false;
+  Serial.printf("   → VPD OPTIMAL (%.2f): All OFF\n", vpdIndoor);
+}
+
+ if (pulseMode) {
+  // In pulse mode, mist is controlled ONLY by handleMistPulse()
+  shouldMistBeOn = false;
+}
   // HYSTERESIS (correct and robust)
   // Hysteresis prevents rapid on/off due to sensor noise
 
-  if (mistState) {
+  if (!pulseMode && mistState) {
     if (leafSensorRaw > (LEAF_WET_THRESHOLD + HYSTERESIS_BUFFER)) {
       shouldMistBeOn = false;
       Serial.println("   → Hysteresis: Turning mist OFF (leaf too wet)");
@@ -398,6 +415,48 @@ String uiStatusClass(bool state) {
   return state ? "status-on" : "status-off";
 }
 
+
+// ==================== Mist Pulse Control ====================
+void handleMistPulse() {
+
+  // If pulse mode not allowed → force mist OFF and reset
+  if (!mistPulseActive) {
+    mistPulseOn = false;
+    mistPulseTimer = 0;
+    if (mistState) setMistState(false);
+    return;
+  }
+
+  unsigned long now = millis();
+
+  // -------- Start pulse --------
+  if (!mistPulseOn && !mistState) {
+
+    // First pulse (allow immediate start)
+    if (mistPulseTimer == 0) {
+      mistPulseTimer = now - MIST_OFF_DURATION;
+    }
+
+    // Wait for OFF duration before starting
+    if (now - mistPulseTimer >= MIST_OFF_DURATION) {
+      mistPulseOn = true;
+      mistPulseTimer = now;
+      setMistState(true);
+      Serial.println("[MIST] Pulse ON");
+    }
+
+    return;
+  }
+
+  // -------- Stop pulse after ON duration --------
+  if (mistPulseOn && (now - mistPulseTimer >= MIST_ON_DURATION)) {
+    mistPulseOn = false;
+    mistPulseTimer = now;
+    setMistState(false);
+    Serial.println("[MIST] Pulse OFF - stabilizing");
+    return;
+  }
+}
 
 
 // ==================== HTML Web Page ====================
@@ -705,6 +764,8 @@ void loop() {
     runControlLogic();
   }
   
+   handleMistPulse();
+   
   // Upload to ThingSpeak at interval
   if (currentMillis - lastThingSpeakUpload >= THINGSPEAK_INTERVAL) {
     lastThingSpeakUpload = currentMillis;
