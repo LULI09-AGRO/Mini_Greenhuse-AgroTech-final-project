@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Full Code for warm weather 
+title: Full Code – Warm Weather 
 ---
 /*********************
  * PROJECT: Mini-Greenhouse VPD Control System
