@@ -127,8 +127,8 @@ String FAN_str       = "OFF";
 String MIST_str      = "OFF";
 
 // ==================== Mist Pulse State ====================
-bool mistPulseActive = false;     // Are we currently in a pulse cycle?
-bool mistPulseOn     = false;     // Is mist currently ON inside the pulse?
+bool mistPulseActive = false;     // Checking if pulse cycle is on
+bool mistPulseOn     = false;     // checking if mist is on
 unsigned long mistPulseTimer = 0; // Timestamp for pulse timing
 
 // ==================== Leaf Sensor Reading Function Variables ====================
@@ -287,7 +287,7 @@ void runControlLogic() {
 }
 
  if (pulseMode) {
-  // In pulse mode, mist is controlled ONLY by handleMistPulse()
+  // mist is controlled by handleMistPulse()
   shouldMistBeOn = false;
 }
   // HYSTERESIS (correct and robust)
@@ -425,7 +425,7 @@ void handleMistPulse() {
 
   unsigned long now = millis();
 
-  // -------- Start pulse --------
+  // -------- Start pulse ---------
   if (!mistPulseOn && !mistState) {
 
     // First pulse (allow immediate start)
@@ -433,7 +433,7 @@ void handleMistPulse() {
       mistPulseTimer = now - MIST_OFF_DURATION;
     }
 
-    // Wait for OFF duration before starting
+    // Wait till OFF before starting
     if (now - mistPulseTimer >= MIST_OFF_DURATION) {
       mistPulseOn = true;
       mistPulseTimer = now;
@@ -464,7 +464,7 @@ void handleRoot() {
   page += "<meta http-equiv='refresh' content='10'>";
   page += "<title>Mini-Greenhouse Control</title>";
 
-  // CSS Styling
+  // Styling and design
   page += "<style>";
   page += "body{font-family:Calibri,Arial,sans-serif; background-color:#116238; color:white; max-width:700px; margin:20px auto; padding:20px;}";
   page += "h1{text-align:center; font-size:28px; margin-bottom:30px;}";
